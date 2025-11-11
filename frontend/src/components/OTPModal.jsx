@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../context/SocketContext';
 
-const OTPModal = ({ ride, onClose, onRideStart }) => {
+const OTPModal = ({ ride, onClose, onRideStart, onRideCancel }) => {
   const [otp, setOtp] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,20 +19,28 @@ const OTPModal = ({ ride, onClose, onRideStart }) => {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
       await axios.post(`/api/rides/${ride._id}/start`, { otp }, config);
 
-    socket.emit('rideUpdate', {
+      // Notify server & rider that ride is starting
+      socket.emit('rideUpdate', {
         rideId: ride._id,
         status: 'in-progress',
-        // Use ride.rider._id if it's an object, or just ride.rider if it's an ID
-        riderId: ride.rider._id || ride.rider, 
+        riderId: ride.rider._id || ride.rider,
         driverId: ride.driver._id || ride.driver,
       });
 
-      onRideStart(); // This updates the driver's local state
+      onRideStart(); // Callback to update parent UI
       onClose();
 
     } catch (err) {
       setError(err.response?.data?.message || 'Invalid OTP');
       setLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!window.confirm('Are you sure you want to cancel this ride?')) return;
+    
+    if (onRideCancel) {
+      onRideCancel(); 
     }
   };
 
@@ -54,8 +62,8 @@ const OTPModal = ({ ride, onClose, onRideStart }) => {
           </div>
           {error && <p className="error-message">{error}</p>}
           <div className="modal-actions">
-            <button className="btn btn-secondary" type="button" onClick={onClose}>
-              Cancel
+            <button className="btn btn-secondary" type="button" onClick={handleCancel} disabled={loading}>
+              Cancel Ride
             </button>
             <button className="btn btn-primary" type="submit" disabled={loading}>
               {loading ? 'Starting...' : 'Start Ride'}

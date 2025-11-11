@@ -21,10 +21,7 @@ const RiderDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
-  // --- Ride Lifecycle State ---
-  // This object will hold { ride: {...}, driver: {...} }
   const [activeRide, setActiveRide] = useState(null); 
-  // This will hold the completed ride data for the rating modal
   const [completedRideData, setCompletedRideData] = useState(null); 
 
   const socket = useSocket();
@@ -33,21 +30,16 @@ const RiderDashboard = () => {
   useEffect(() => {
     if (!socket) return;
 
-    // --- Socket Event Listeners ---
-
-    // 1. A driver accepted our ride
     const handleRideAccepted = (data) => {
-      // data = { ride: {...}, driver: {...} }
       setLoading(false);
       setMessage('Your driver is on the way!');
-      setActiveRide(data); // <-- This triggers the UI switch
+      setActiveRide(data);
     };
     
-    // 2. The ride status changed (e.g., 'in-progress', 'completed')
     const handleStatusChange = ({ status, rideId }) => {
+      // Check if this update is for our active ride
       if (activeRide && activeRide.ride._id === rideId) {
         
-        // Update the ride status in our local state
         const updatedRide = { ...activeRide, ride: { ...activeRide.ride, status: status } };
         setActiveRide(updatedRide);
 
@@ -57,7 +49,13 @@ const RiderDashboard = () => {
         
         if (status === 'completed') {
           setMessage('Ride complete! Please pay your driver.');
-          // The UI will now show the payment button
+        }
+
+        // --- ADDED THIS BLOCK ---
+        if (status === 'cancelled') {
+          setActiveRide(null);
+          setCompletedRideData(null); // Clear any rating modals
+          setMessage('The ride was cancelled.');
         }
       }
     };
@@ -71,57 +69,41 @@ const RiderDashboard = () => {
     };
   }, [socket, activeRide]);
 
-  // --- Core Functions ---
 
-const handleRequestRide = async (e) => {
+  const handleRequestRide = async (e) => {
     e.preventDefault();
     setLoading(true);
     setMessage('Sending your request...');
 
     try {
-      const config = {
-        headers: { Authorization: `Bearer ${auth.token}` },
-      };
-      
-      const rideData = {
-        fromZone,
-        toZone,
-        scheduledTime: isScheduled ? scheduledTime : null,
-      };
+      const config = { headers: { Authorization: `Bearer ${auth.token}` } };
+      const rideData = { fromZone, toZone, scheduledTime: isScheduled ? scheduledTime : null };
       
       const { data: createdRide } = await axios.post('/api/rides', rideData, config);
 
       if (!isScheduled) {
-
-socket.emit('requestRide', { ...createdRide, rider: auth });        setMessage('Ride requested! Searching for nearby drivers.');
+        // Send the full auth object as the rider
+        socket.emit('requestRide', { ...createdRide, rider: auth });
+        setMessage('Ride requested! Searching for nearby drivers.');
       } else {
         setMessage(`Ride scheduled for ${new Date(scheduledTime).toLocaleString()}`);
         setLoading(false);
       }
     } catch (error) {
-      // --- THIS IS THE NEW, DETAILED CATCH BLOCK ---
-      
-      console.error("FULL ERROR OBJECT:", error); // This is the most important line
-
+      console.error("FULL ERROR OBJECT:", error); 
       if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
         console.error("Backend Error Data:", error.response.data);
-        console.error("Backend Error Status:", error.response.status);
         setMessage(error.response.data.message || 'Error from server');
       } else if (error.request) {
-        // The request was made but no response was received
-        console.error("No response from server. Is backend running? Is proxy correct?", error.request);
+        console.error("No response from server.", error.request);
         setMessage('Network Error: The server is not responding.');
       } else {
-        // Something happened in setting up the request that triggered an Error
-        // This is likely a local JavaScript error (e.g., auth.token is undefined)
         console.error("Local JavaScript Error:", error.message);
         setMessage(`Local Error: ${error.message}`);
       }
-
     } finally {
-      setLoading(false); 
+      // We only set loading false in catch, because success leads to new state
+      if (loading) setLoading(false);
     }
   };
 
@@ -131,13 +113,8 @@ socket.emit('requestRide', { ...createdRide, rider: auth });        setMessage('
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
       await axios.put(`/api/rides/${activeRide.ride._id}/pay`, {}, config);
 
-      // Payment success!
       setLoading(false);
-      
-      // 1. Set data for the rating modal
       setCompletedRideData({ ride: activeRide.ride, userToRate: activeRide.driver });
-      
-      // 2. Clear the active ride to reset the UI
       setActiveRide(null); 
 
     } catch (err) {
@@ -146,50 +123,81 @@ socket.emit('requestRide', { ...createdRide, rider: auth });        setMessage('
     }
   };
 
-  // --- UI Rendering ---
+  // --- ADD THIS NEW FUNCTION ---
+  const handleCancelRide = async () => {
+    if (!window.confirm('Are you sure you want to cancel this ride?')) return;
+    
+    setLoading(true);
+    try {
+      const config = { headers: { Authorization: `Bearer ${auth.token}` } };
+      await axios.put(`/api/rides/${activeRide.ride._id}/cancel`, {}, config);
 
-  // Show the rating modal if we have data for it
+      // Notify the other user
+      socket.emit('rideUpdate', {
+        rideId: activeRide.ride._id,
+        status: 'cancelled',
+        riderId: activeRide.ride.rider._id || activeRide.ride.rider,
+        driverId: activeRide.driver._id || activeRide.driver,
+      });
+
+      setActiveRide(null); // Go back to request form
+      setMessage('Ride has been cancelled.');
+
+    } catch (err) {
+      console.error("Error cancelling ride", err);
+      setMessage(err.response?.data?.message || 'Could not cancel ride');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- RENDER LOGIC ---
+
   if (completedRideData) {
     return (
       <RatingModal
         ride={completedRideData.ride}
         ratingForUser={completedRideData.userToRate}
-        onClose={() => setCompletedRideData(null)} // Resets UI to default
+        onClose={() => setCompletedRideData(null)}
       />
     );
   }
 
-  // Show loading overlay
   if (loading) return <Loader />;
   
-  // Show the active ride UI (if a ride is accepted)
   if (activeRide) {
     const { driver, ride } = activeRide;
     return (
       <div className="container dashboard-container">
         <h2>{message}</h2>
         
-        {/* VIEW 1: Driver En Route (Status = booked) */}
         {ride.status === 'booked' && (
           <div className="driver-details-card">
             <h3>Driver Details</h3>
-            <img src={driver.profilePhoto} alt={driver.name} className="profile-photo-small" />
-            <p><strong>Name:</strong> {driver.name}</p>
-            <p><strong>Vehicle:</strong> {driver.vehicleNumber}</p>
-            <p><strong>Rating:</strong> {driver.averageRating} ★</p>
+            <img 
+              src={driver?.profilePhoto || '/images/default-avatar.png'} 
+              alt={driver?.name || 'Driver'} 
+              className="profile-photo-small" 
+            />
+            <p><strong>Name:</strong> {driver?.name || 'Driver'}</p>
+            <p><strong>Vehicle:</strong> {driver?.vehicleNumber}</p>
+            <p><strong>Rating:</strong> {driver?.averageRating || 'N/A'} ★</p>
             <hr />
             <h3>Ride Info</h3>
             <p><strong>Your OTP:</strong> <strong>{ride.otp}</strong></p>
             <p>Share this OTP with your driver to start the ride.</p>
+            
+            {/* --- ADD THIS NEW BUTTON --- */}
+            <button onClick={handleCancelRide} className="btn btn-secondary" style={{marginTop: '1rem'}}>
+              Cancel Ride
+            </button>
           </div>
         )}
 
-        {/* VIEW 2: Ride In Progress (Status = in-progress) */}
         {ride.status === 'in-progress' && (
            <InAppChat rideId={ride._id} />
         )}
 
-        {/* VIEW 3: Ride Completed (Status = completed) */}
         {ride.status === 'completed' && (
           <div className="driver-details-card">
             <h3>Ride Complete</h3>
@@ -205,7 +213,6 @@ socket.emit('requestRide', { ...createdRide, rider: auth });        setMessage('
     );
   }
 
-  // Default View: Show the ride request form
   return (
     <div className="container dashboard-container">
       <h2>Request a Ride</h2>

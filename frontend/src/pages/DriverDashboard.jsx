@@ -3,12 +3,11 @@ import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../hooks/useAuth';
 import axios from 'axios';
 
-// Import all necessary components
-import DriverRideModal from '../components/DriverRideModal';
-import OTPModal from '../components/OTPModal';
-import InAppChat from '../components/InAppChat';
-import RatingModal from '../components/RatingModal';
-import Loader from '../components/Loader';
+import DriverRideModal from '../components/DriverRideModal.jsx';
+import OTPModal from '../components/OTPModal.jsx';
+import InAppChat from '../components/InAppChat.jsx';
+import RatingModal from '../components/RatingModal.jsx';
+import Loader from '../components/Loader.jsx';
 
 const ZONES = ['CMRCET', 'Hitech City', 'Airport'];
 
@@ -17,9 +16,8 @@ const DriverDashboard = () => {
   const [currentZone, setCurrentZone] = useState('CMRCET');
   const [loading, setLoading] = useState(false);
   
-  // --- Ride Lifecycle State ---
-  const [incomingRide, setIncomingRide] = useState(null); // The ride request modal
-  const [activeRide, setActiveRide] = useState(null); // The ride they accepted
+  const [incomingRide, setIncomingRide] = useState(null);
+  const [activeRide, setActiveRide] = useState(null);
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [completedRideData, setCompletedRideData] = useState(null);
 
@@ -28,29 +26,28 @@ const DriverDashboard = () => {
 
   useEffect(() => {
     if (!socket) return;
-
-    // --- Socket Event Listeners ---
     
-    // 1. A new ride request comes in for our zone
     const handleNewRideRequest = (rideDetails) => {
-      if (!incomingRide && !activeRide) { // Don't show if already in a ride
+      if (!incomingRide && !activeRide) {
         setIncomingRide(rideDetails);
       }
     };
 
-    // 2. The ride status changed (e.g., 'completed')
     const handleStatusChange = ({ status, rideId }) => {
       if (activeRide && activeRide._id === rideId) {
         
-        // Update local state
         const updatedRide = { ...activeRide, status: status };
         setActiveRide(updatedRide);
 
         if (status === 'completed') {
-          // Ride is over, show the rating modal
           setCompletedRideData({ ride: activeRide, userToRate: activeRide.rider });
-          // Clear the active ride
           setActiveRide(null);
+        }
+
+        if (status === 'cancelled') {
+          setActiveRide(null); // Go back to "Online" screen
+          setShowOTPModal(false); // Close OTP modal if open
+          setCompletedRideData(null); // Close rating modal
         }
       }
     };
@@ -70,67 +67,76 @@ const DriverDashboard = () => {
   }, [isOnline, currentZone, socket, incomingRide, activeRide]);
 
 
-  // --- Core Functions ---
-
-  // When driver clicks "Accept" in the DriverRideModal
   const onRideAccepted = (acceptedRide) => {
-    setIncomingRide(null); // Close the request modal
-    setActiveRide(acceptedRide); // Set this as the current ride
-    setShowOTPModal(true); // Open the OTP modal
+    setIncomingRide(null);
+    setActiveRide(acceptedRide);
+    setShowOTPModal(true);
   };
 
-  // When driver successfully enters OTP
   const onRideStart = () => {
     setShowOTPModal(false);
-    // Update local state to 'in-progress'
     setActiveRide(prev => ({ ...prev, status: 'in-progress' }));
   };
 
-const handleEndRide = async () => {
+  const handleEndRide = async () => {
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
       
-      // 1. Tell backend to end the ride.
-      // This API call was failing with 400. The OTPModal fix should solve this.
       const { data: endedRide } = await axios.put(
         `/api/rides/${activeRide._id}/end`,
         {},
         config
       );
 
-      // 2. Tell all clients (rider) that the ride is completed
-      // We fix the auth.user bug here
       socket.emit('rideUpdate', {
         rideId: activeRide._id,
         status: 'completed',
-        // We get the rider ID from the ride object
         riderId: activeRide.rider._id || activeRide.rider,
-        driverId: auth._id, // <-- FIX: was auth.user._id
+        driverId: auth._id, // <-- FIX
       });
 
-      // 3. Show the rating modal
-      // We must get the full rider object from the `endedRide` data
       setCompletedRideData({ ride: endedRide, userToRate: endedRide.rider });
-      setActiveRide(null); // Clear the active ride
+      setActiveRide(null);
 
     } catch (err) {
       console.error('Error ending ride', err);
-      // We'll see this if the 400 error persists
     } finally {
       setLoading(false);
     }
   };
 
-  // --- UI Rendering ---
+  const handleCancelRide = async () => {
+    if (!window.confirm('Are you sure you want to cancel this ride?')) return;
+    
+    setLoading(true);
+    try {
+      const config = { headers: { Authorization: `Bearer ${auth.token}` } };
+      await axios.put(`/api/rides/${activeRide._id}/cancel`, {}, config);
 
-  // Show modals on top of everything
+      socket.emit('rideUpdate', {
+        rideId: activeRide._id,
+        status: 'cancelled',
+        riderId: activeRide.rider._id || activeRide.rider,
+        driverId: auth._id,
+      });
+
+      setActiveRide(null); // Go back to online screen
+      setShowOTPModal(false); // Close OTP modal
+    } catch (err) {
+      console.error("Error cancelling ride", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   if (incomingRide) {
     return (
       <DriverRideModal
         ride={incomingRide}
         onClose={() => setIncomingRide(null)}
-        onRideAccepted={onRideAccepted} // This is the key transition
+        onRideAccepted={onRideAccepted}
       />
     );
   }
@@ -139,7 +145,8 @@ const handleEndRide = async () => {
       <OTPModal
         ride={activeRide}
         onClose={() => setShowOTPModal(false)}
-        onRideStart={onRideStart} // This is the key transition
+        onRideStart={onRideStart}
+        onRideCancel={handleCancelRide} 
       />
     );
   }
@@ -148,22 +155,25 @@ const handleEndRide = async () => {
       <RatingModal
         ride={completedRideData.ride}
         ratingForUser={completedRideData.userToRate}
-        onClose={() => setCompletedRideData(null)} // Resets UI to default
+        onClose={() => setCompletedRideData(null)}
       />
     );
   }
   if (loading) return <Loader />;
 
 
-  // VIEW 1: Driver is "Online" and "In a Ride"
   if (isOnline && activeRide) {
     return (
       <div className="container dashboard-container">
         <h2>Ride in Progress</h2>
         <div className="driver-details-card">
           <h3>Rider Details</h3>
-          <img src={activeRide.rider.profilePhoto} alt={activeRide.rider.name} className="profile-photo-small" />
-          <p><strong>Name:</strong> {activeRide.rider.name}</p>
+          <img 
+            src={activeRide.rider?.profilePhoto || '/images/default-avatar.png'} 
+            alt={activeRide.rider?.name || 'Rider'} 
+            className="profile-photo-small" 
+          />
+          <p><strong>Name:</strong> {activeRide.rider?.name || 'Rider'}</p>
           <hr />
           <p><strong>From:</strong> {activeRide.fromZone}</p>
           <p><strong>To:</strong> {activeRide.toZone}</p>
@@ -178,7 +188,6 @@ const handleEndRide = async () => {
     );
   }
 
-  // VIEW 2: Driver is "Online" and "Waiting for a Ride"
   if (isOnline && !activeRide) {
     return (
       <div className="container dashboard-container">
@@ -193,7 +202,6 @@ const handleEndRide = async () => {
     );
   }
   
-  // VIEW 3: (Default) Driver is "Offline"
   return (
     <div className="container dashboard-container">
       <div className="driver-toggle">

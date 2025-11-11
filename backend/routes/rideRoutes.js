@@ -7,6 +7,7 @@ import {
   endRide,
   payForRide,
   getRideHistory,
+  cancelRide,
 } from '../controllers/rideController.js';
 import { protect, driver, rider } from '../middleware/authMiddleware.js'; // Assuming auth middleware
 
