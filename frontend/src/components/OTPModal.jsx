@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../context/SocketContext';
 import InAppChat from './InAppChat';
-
+const API = import.meta.env.VITE_API_URL;
 const OTPModal = ({
   ride,
   onClose,
@@ -30,7 +30,7 @@ const OTPModal = ({
 
     try {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
-      await axios.post(`/api/rides/${ride._id}/start`, { otp }, config);
+      await axios.post(`${API}/api/rides/${ride._id}/start`, { otp }, config);
 
       // Notify rider
       socket.emit('rideUpdate', {

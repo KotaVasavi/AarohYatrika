@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../hooks/useAuth';
 import axios from 'axios';
-
+const API = import.meta.env.VITE_API_URL;
 import DriverRideModal from '../components/DriverRideModal.jsx';
 import OTPModal from '../components/OTPModal.jsx';
 import RatingModal from '../components/RatingModal.jsx';
@@ -118,7 +118,7 @@ const DriverDashboard = () => {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
       
       const { data: endedRide } = await axios.put(
-        `/api/rides/${activeRide._id}/end`,
+        `${API}/api/rides/${activeRide._id}/end`,
         {},
         config
       );
@@ -147,7 +147,7 @@ const DriverDashboard = () => {
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
-      await axios.put(`/api/rides/${activeRide._id}/cancel`, {}, config);
+      await axios.put(`${API}/api/rides/${activeRide._id}/cancel`, {}, config);
 
       socket.emit('rideUpdate', {
         rideId: activeRide._id,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useSocket } from '../context/SocketContext';
 import { useAuth } from '../hooks/useAuth';
 import axios from 'axios';
-
+const API = import.meta.env.VITE_API_URL;
 // Import all necessary components
 import Loader from '../components/Loader';
 import InAppChat from '../components/InAppChat';
@@ -112,7 +112,8 @@ const RiderDashboard = () => {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
       const rideData = { fromZone, toZone, scheduledTime: isScheduled ? scheduledTime : null };
       
-      const { data: createdRide } = await axios.post('/api/rides', rideData, config);
+      const { data: createdRide } = await axios.post(`${API}/api/rides`, rideData, config);
+
 
       if (!isScheduled) {
         // Send the full auth object as the rider
@@ -144,7 +145,7 @@ const RiderDashboard = () => {
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
-      await axios.put(`/api/rides/${activeRide.ride._id}/pay`, {}, config);
+      await axios.put(`${API}/api/rides/${activeRide.ride._id}/pay`, {}, config);
 
       setLoading(false);
       setCompletedRideData({ ride: activeRide.ride, userToRate: activeRide.driver });
@@ -162,7 +163,7 @@ const RiderDashboard = () => {
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
-      await axios.put(`/api/rides/${activeRide.ride._id}/cancel`, {}, config);
+      await axios.put(`${API}/api/rides/${activeRide.ride._id}/cancel`, {}, config);
 
       // Notify the other user
       socket.emit('rideUpdate', {

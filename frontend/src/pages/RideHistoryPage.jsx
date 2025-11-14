@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth.js';
 import Loader from '../components/Loader.jsx';
-
+const API = import.meta.env.VITE_API_URL;
 const RideHistoryPage = () => {
   const [rides, setRides] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,7 +20,7 @@ const RideHistoryPage = () => {
         const config = {
           headers: { Authorization: `Bearer ${auth.token}` },
         };
-        const { data } = await axios.get('/api/rides/history', config);
+        const { data } = await axios.get(`${API}/api/rides/history`, config);
         setRides(data);
       } catch (err) {
         setError(err.response?.data?.message || 'Failed to fetch ride history');

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
 import Loader from '../components/Loader';
-
+const API = import.meta.env.VITE_API_URL;
 const ProfilePage = () => {
   const { auth, setAuth, logout } = useAuth();
   
@@ -27,7 +27,7 @@ const ProfilePage = () => {
         const config = {
           headers: { Authorization: `Bearer ${auth.token}` },
         };
-        const { data } = await axios.get('/api/users/profile', config);
+        const { data } = await axios.get(`${API}/api/users/profile`, config);
         setUser(data);
         setName(data.name);
         setEmail(data.email);
@@ -62,7 +62,7 @@ const ProfilePage = () => {
         updateData.password = password;
       }
 
-      const { data } = await axios.put('/api/users/profile', updateData, config);
+      const { data } = await axios.put(`${API}/api/users/profile`, updateData, config);
       
       // Update local storage/auth context
       setAuth({ ...auth, user: { ...auth.user, ...data } });

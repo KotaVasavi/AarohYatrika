@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
-
+const API = import.meta.env.VITE_API_URL;
 const RatingModal = ({ ride, ratingForUser, onClose }) => {
   const [rating, setRating] = useState(0);
   const [hover, setHover] = useState(0);
@@ -22,7 +22,7 @@ const RatingModal = ({ ride, ratingForUser, onClose }) => {
         headers: { Authorization: `Bearer ${auth.token}` },
       };
       await axios.post(
-        '/api/users/rate',
+        `${API}/api/users/rate`,
         {
           rideId: ride._id,
           ratingFor: ratingForUser._id, // The ID of the user being rated

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
-
+const API = import.meta.env.VITE_API_URL;
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -19,7 +19,7 @@ const LoginPage = () => {
     setError('');
 
     try {
-      const { data } = await axios.post('/api/auth/login', {
+      const { data } = await axios.post(`${API}/api/auth/login`, {
         email,
         password,
       });

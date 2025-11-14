@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import { useSocket } from '../context/SocketContext';
 import axios from 'axios';
-
+const API = import.meta.env.VITE_API_URL;
 const DriverRideModal = ({ ride, onClose ,onRideAccepted}) => {
   const [isAccepting, setIsAccepting] = useState(false);
   const { auth } = useAuth();
@@ -14,7 +14,7 @@ const DriverRideModal = ({ ride, onClose ,onRideAccepted}) => {
       // 1. Tell the server we are accepting
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
       const { data: acceptedRide } = await axios.put(
-        `/api/rides/${ride._id}/accept`,
+        `${API}/api/rides/${ride._id}/accept`,
         {},
         config
       );
