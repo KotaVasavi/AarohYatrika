@@ -23,6 +23,9 @@ const RiderDashboard = () => {
   
   const [activeRide, setActiveRide] = useState(null); 
   const [completedRideData, setCompletedRideData] = useState(null); 
+  const [showChat, setShowChat] = useState(false);
+  const [hasNewMessage, setHasNewMessage] = useState(false);
+  const [messages, setMessages] = useState([]);
 
   const socket = useSocket();
   const { auth } = useAuth();
@@ -30,10 +33,13 @@ const RiderDashboard = () => {
   useEffect(() => {
     if (!socket) return;
 
-    const handleRideAccepted = (data) => {
+  const handleRideAccepted = (data) => {
       setLoading(false);
       setMessage('Your driver is on the way!');
       setActiveRide(data);
+      setShowChat(false); 
+      setHasNewMessage(false);
+      setMessages([]); 
     };
     
     const handleStatusChange = ({ status, rideId }) => {
@@ -51,24 +57,51 @@ const RiderDashboard = () => {
           setMessage('Ride complete! Please pay your driver.');
         }
 
-        // --- ADDED THIS BLOCK ---
         if (status === 'cancelled') {
           setActiveRide(null);
-          setCompletedRideData(null); // Clear any rating modals
+          setCompletedRideData(null);
+          setShowChat(false);
+          setHasNewMessage(false);
+          setMessages([]); 
           setMessage('The ride was cancelled.');
         }
+      }
+    };
+    const handleReceiveMessage = (message) => {
+      // Add the message to our persistent state
+      setMessages((prev) => [...prev, message]);
+      
+      // Check for notification
+      if (message.sender !== auth.role && !showChat) {
+        setHasNewMessage(true);
       }
     };
 
     socket.on('rideAccepted', handleRideAccepted);
     socket.on('rideStatusChanged', handleStatusChange);
+    socket.on('receiveMessage', handleReceiveMessage); // Renamed for clarity
 
     return () => {
       socket.off('rideAccepted', handleRideAccepted);
       socket.off('rideStatusChanged', handleStatusChange);
+      socket.off('receiveMessage', handleReceiveMessage);
     };
+  }, [socket, activeRide, showChat, auth.role]);
+  
+  useEffect(() => {
+    if (socket && activeRide && activeRide.ride.status === 'booked') {
+      const rideId = activeRide.ride._id;
+      // We join the room as soon as the ride is 'booked'
+      socket.emit('joinChatRoom', rideId);
+      console.log('Rider joined chat room:', rideId);
+  
+      // Return a cleanup function to leave when the ride is no longer active
+      return () => {
+        socket.emit('leaveChatRoom', rideId);
+        console.log('Rider left chat room:', rideId);
+      };
+    }
   }, [socket, activeRide]);
-
 
   const handleRequestRide = async (e) => {
     e.preventDefault();
@@ -123,7 +156,6 @@ const RiderDashboard = () => {
     }
   };
 
-  // --- ADD THIS NEW FUNCTION ---
   const handleCancelRide = async () => {
     if (!window.confirm('Are you sure you want to cancel this ride?')) return;
     
@@ -150,7 +182,14 @@ const RiderDashboard = () => {
       setLoading(false);
     }
   };
-
+  
+  const toggleChat = () => {
+    // When we open the chat, clear the notification
+    if (!showChat) {
+      setHasNewMessage(false);
+    }
+    setShowChat(prev => !prev);
+  };
   // --- RENDER LOGIC ---
 
   if (completedRideData) {
@@ -164,54 +203,70 @@ const RiderDashboard = () => {
   }
 
   if (loading) return <Loader />;
-  
   if (activeRide) {
-    const { driver, ride } = activeRide;
-    return (
-      <div className="container dashboard-container">
-        <h2>{message}</h2>
-        
-        {ride.status === 'booked' && (
-          <div className="driver-details-card">
-            <h3>Driver Details</h3>
-            <img 
-              src={driver?.profilePhoto || '/images/default-avatar.png'} 
-              alt={driver?.name || 'Driver'} 
-              className="profile-photo-small" 
-            />
-            <p><strong>Name:</strong> {driver?.name || 'Driver'}</p>
-            <p><strong>Vehicle:</strong> {driver?.vehicleNumber}</p>
-            <p><strong>Rating:</strong> {driver?.averageRating || 'N/A'} ★</p>
-            <hr />
-            <h3>Ride Info</h3>
-            <p><strong>Your OTP:</strong> <strong>{ride.otp}</strong></p>
-            <p>Share this OTP with your driver to start the ride.</p>
-            
-            {/* --- ADD THIS NEW BUTTON --- */}
-            <button onClick={handleCancelRide} className="btn btn-secondary" style={{marginTop: '1rem'}}>
-              Cancel Ride
-            </button>
-          </div>
-        )}
+  const { driver, ride } = activeRide;
 
-        {ride.status === 'in-progress' && (
-           <InAppChat rideId={ride._id} />
-        )}
+  return (
+    <div className="container dashboard-container">
+      <h2>{message}</h2>
 
-        {ride.status === 'completed' && (
-          <div className="driver-details-card">
-            <h3>Ride Complete</h3>
-            <p>Total Fare: <strong>₹{ride.fare}</strong></p>
-            <p>Please pay your driver in cash.</p>
-            <button onClick={handleSimulatedPayment} className="btn btn-primary">
-              [ Pay with Cash ]
-            </button>
-          </div>
-        )}
+      {/* --- RIDE BOOKED --- */}
+      {ride.status === 'booked' && (
+        <div className="driver-details-card">
+          <h3>Driver Details</h3>
+          <img
+            src={driver?.profilePhoto || '/images/default-avatar.png'}
+            alt={driver?.name || 'Driver'}
+            className="profile-photo-small"
+          />
+          <p><strong>Name:</strong> {driver?.name || 'Driver'}</p>
+          <p><strong>Vehicle:</strong> {driver?.vehicleNumber}</p>
+          <p><strong>Rating:</strong> {driver?.averageRating || 'N/A'} ★</p>
 
-      </div>
-    );
-  }
+          <hr />
+          <h3>Ride Info</h3>
+          <p><strong>Your OTP:</strong> {ride.otp}</p>
+          <p>Share this OTP with your driver to start the ride.</p>
+
+          <button onClick={handleCancelRide} className="btn btn-secondary" style={{ marginTop: '1rem' }}>
+            Cancel Ride
+          </button>
+
+          <button 
+                onClick={toggleChat} 
+                className={`btn btn-primary ${hasNewMessage ? 'btn-chat-notify' : ''}`}
+              >
+                {showChat ? 'Hide Chat' : 'Chat with Driver'}
+                {hasNewMessage && !showChat && ' (New!)'}
+              </button>
+
+{showChat && <InAppChat rideId={ride._id} messages={messages} />}        </div>
+      )}
+
+      {/* --- RIDE IN PROGRESS --- */}
+      {ride.status === 'in-progress' && (
+        <div className="driver-details-card">
+          <h3>Ride In Progress</h3>
+          <p>Destination: {ride.toZone}</p>
+          <p>Enjoy your trip!</p>
+        </div>
+      )}
+
+      {/* --- RIDE COMPLETED --- */}
+      {ride.status === 'completed' && (
+        <div className="driver-details-card">
+          <h3>Ride Complete</h3>
+          <p>Total Fare: <strong>₹{ride.fare}</strong></p>
+          <p>Please pay your driver in cash.</p>
+          <button onClick={handleSimulatedPayment} className="btn btn-primary">
+            [ Pay with Cash ]
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
   return (
     <div className="container dashboard-container">

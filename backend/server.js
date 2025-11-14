@@ -25,7 +25,7 @@ app.use('/api/rides', rideRoutes);
 app.use('/api/users', userRoutes);
 
 app.get('/', (req, res) => {
-  res.send('SafeRide API is running...');
+  res.send('AarohYatrika API is running...');
 });
 
 // --- Error Handling Middleware (MUST BE AFTER ROUTES) ---
@@ -67,16 +67,13 @@ io.on('connection', (socket) => {
   
   // Rider requests a ride
   socket.on('requestRide', (rideDetails) => {
-    // rideDetails should include { fromZone, toZone, riderId, ... }
-    // Emit *only* to drivers in that specific "from" zone
     io.to(rideDetails.fromZone).emit('newRideRequest', rideDetails);
     console.log(`Ride request emitted to room: ${rideDetails.fromZone}`);
   });
 
   // Driver accepts a ride
   socket.on('acceptRide', (data) => {
-    // data = { ride: {...}, driver: {...} }
-    const riderSocketId = userSocketMap.get(data.ride.rider._id || data.ride.rider); // Handle populated/unpopulated ID
+    const riderSocketId = userSocketMap.get(data.ride.rider._id || data.ride.rider);
     if (riderSocketId) {
       io.to(riderSocketId).emit('rideAccepted', data);
       console.log(`Notifying rider ${data.ride.rider._id} at socket ${riderSocketId}`);
@@ -89,16 +86,18 @@ io.on('connection', (socket) => {
     console.log(`Socket ${socket.id} joined chat room: ${rideId}`);
   });
 
+  
+  socket.on('leaveChatRoom', (rideId) => {
+    socket.leave(rideId);
+    console.log(`Socket ${socket.id} left chat room: ${rideId}`);
+  });
+
   socket.on('sendMessage', (data) => {
-    // data = { rideId, message: { sender: 'rider/driver', text: '...' } }
+    
     io.to(data.rideId).emit('receiveMessage', data.message);
   });
   
-  // --- Ride Status Updates ---
   socket.on('rideUpdate', (data) => {
-    // data = { rideId, status: 'in-progress' | 'completed', riderId, driverId }
-    
-    // Notify both rider and driver
     const riderSocket = userSocketMap.get(data.riderId);
     const driverSocket = userSocketMap.get(data.driverId);
 
@@ -111,7 +110,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Clean up userSocketMap
     for (let [userId, socketId] of userSocketMap.entries()) {
       if (socketId === socket.id) {
         userSocketMap.delete(userId);

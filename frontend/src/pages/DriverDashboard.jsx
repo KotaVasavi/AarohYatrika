@@ -5,7 +5,6 @@ import axios from 'axios';
 
 import DriverRideModal from '../components/DriverRideModal.jsx';
 import OTPModal from '../components/OTPModal.jsx';
-import InAppChat from '../components/InAppChat.jsx';
 import RatingModal from '../components/RatingModal.jsx';
 import Loader from '../components/Loader.jsx';
 
@@ -21,9 +20,14 @@ const DriverDashboard = () => {
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [completedRideData, setCompletedRideData] = useState(null);
 
+  const [showChat, setShowChat] = useState(false);
+  const [hasNewMessage, setHasNewMessage] = useState(false);
+  const [messages, setMessages] = useState([]);
+
   const socket = useSocket();
   const { auth } = useAuth();
 
+ 
   useEffect(() => {
     if (!socket) return;
     
@@ -36,7 +40,7 @@ const DriverDashboard = () => {
     const handleStatusChange = ({ status, rideId }) => {
       if (activeRide && activeRide._id === rideId) {
         
-        const updatedRide = { ...activeRide, status: status };
+        const updatedRide = { ...activeRide, status };
         setActiveRide(updatedRide);
 
         if (status === 'completed') {
@@ -45,32 +49,62 @@ const DriverDashboard = () => {
         }
 
         if (status === 'cancelled') {
-          setActiveRide(null); // Go back to "Online" screen
-          setShowOTPModal(false); // Close OTP modal if open
-          setCompletedRideData(null); // Close rating modal
+          setActiveRide(null);
+          setShowOTPModal(false);
+          setCompletedRideData(null);
         }
+      }
+    };
+
+    const handleReceiveMessage = (message) => {
+      setMessages(prev => [...prev, message]);
+
+      if (message.sender !== auth.role && !showChat) {
+        setHasNewMessage(true);
       }
     };
 
     if (isOnline) {
       socket.emit('joinZoneRoom', currentZone);
       socket.on('newRideRequest', handleNewRideRequest);
-      socket.on('rideStatusChanged', handleStatusChange);
     } else {
       socket.emit('leaveZoneRoom', currentZone);
     }
-    
+
+    socket.on('rideStatusChanged', handleStatusChange);
+    socket.on('receiveMessage', handleReceiveMessage);
+
     return () => {
       socket.off('newRideRequest', handleNewRideRequest);
       socket.off('rideStatusChanged', handleStatusChange);
+      socket.off('receiveMessage', handleReceiveMessage);
     };
-  }, [isOnline, currentZone, socket, incomingRide, activeRide]);
+  }, [isOnline, currentZone, socket, incomingRide, activeRide, showChat, auth.role]);
 
+  
+  useEffect(() => {
+    if (socket && activeRide && activeRide.status === 'booked') {
+      const rideId = activeRide._id;
+
+      socket.emit('joinChatRoom', rideId);
+      console.log('Driver joined chat room:', rideId);
+
+      return () => {
+        socket.emit('leaveChatRoom', rideId);
+        console.log('Driver left chat room:', rideId);
+      };
+    }
+  }, [socket, activeRide]);
 
   const onRideAccepted = (acceptedRide) => {
     setIncomingRide(null);
     setActiveRide(acceptedRide);
     setShowOTPModal(true);
+
+    // Reset chat
+    setMessages([]);
+    setShowChat(false);
+    setHasNewMessage(false);
   };
 
   const onRideStart = () => {
@@ -93,7 +127,7 @@ const DriverDashboard = () => {
         rideId: activeRide._id,
         status: 'completed',
         riderId: activeRide.rider._id || activeRide.rider,
-        driverId: auth._id, // <-- FIX
+        driverId: auth._id,
       });
 
       setCompletedRideData({ ride: endedRide, userToRate: endedRide.rider });
@@ -106,6 +140,7 @@ const DriverDashboard = () => {
     }
   };
 
+ 
   const handleCancelRide = async () => {
     if (!window.confirm('Are you sure you want to cancel this ride?')) return;
     
@@ -121,14 +156,22 @@ const DriverDashboard = () => {
         driverId: auth._id,
       });
 
-      setActiveRide(null); // Go back to online screen
-      setShowOTPModal(false); // Close OTP modal
+      setActiveRide(null);
+      setShowOTPModal(false);
     } catch (err) {
       console.error("Error cancelling ride", err);
     } finally {
       setLoading(false);
     }
   };
+
+  const toggleChat = () => {
+    if (!showChat) {
+      setHasNewMessage(false);
+    }
+    setShowChat(prev => !prev);
+  };
+
 
 
   if (incomingRide) {
@@ -140,16 +183,24 @@ const DriverDashboard = () => {
       />
     );
   }
+
   if (showOTPModal) {
     return (
       <OTPModal
         ride={activeRide}
         onClose={() => setShowOTPModal(false)}
         onRideStart={onRideStart}
-        onRideCancel={handleCancelRide} 
+        onRideCancel={handleCancelRide}
+
+        // --- Pass Chat State to Modal ---
+        messages={messages}
+        showChat={showChat}
+        hasNewMessage={hasNewMessage}
+        toggleChat={toggleChat}
       />
     );
   }
+
   if (completedRideData) {
     return (
       <RatingModal
@@ -159,8 +210,8 @@ const DriverDashboard = () => {
       />
     );
   }
-  if (loading) return <Loader />;
 
+  if (loading) return <Loader />;
 
   if (isOnline && activeRide) {
     return (
@@ -178,10 +229,8 @@ const DriverDashboard = () => {
           <p><strong>From:</strong> {activeRide.fromZone}</p>
           <p><strong>To:</strong> {activeRide.toZone}</p>
         </div>
-        
-        <InAppChat rideId={activeRide._id} />
-        
-        <button onClick={handleEndRide} className="btn btn-primary" style={{width: '100%', marginTop: '1rem'}}>
+
+        <button onClick={handleEndRide} className="btn btn-primary" style={{ width: '100%', marginTop: '1.5rem' }}>
           End Ride
         </button>
       </div>
@@ -201,7 +250,7 @@ const DriverDashboard = () => {
       </div>
     );
   }
-  
+
   return (
     <div className="container dashboard-container">
       <div className="driver-toggle">

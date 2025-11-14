@@ -668,8 +668,30 @@ p {
   color: var(--white);
 }
 
-/* --- Main Content Padding --- */
 main {
-  /* Prevents content from hiding behind sticky navbar */
   padding-top: 1rem;
+}
+/* --- Chat Notification Button --- */
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 123, 255, 0.7);
+  }
+  70% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(0, 123, 255, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(0, 123, 255, 0);
+  }
+}
+
+.btn-chat-notify {
+  background-color: #007bff;
+  border-color: #007bff;
+  animation: pulse 2s infinite;
+}
+.btn-chat-notify:hover {
+  background-color: #0069d9 !important;
 }
