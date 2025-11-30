@@ -1,28 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { useSocket } from '../context/SocketContext';
-import { useAuth } from '../hooks/useAuth';
+import { useSocket } from '../context/SocketContext.jsx';
+import { useAuth } from '../hooks/useAuth.js';
 import axios from 'axios';
 const API = import.meta.env.VITE_API_URL;
-// Import all necessary components
-import Loader from '../components/Loader';
-import InAppChat from '../components/InAppChat';
-import RatingModal from '../components/RatingModal';
+import Loader from '../components/Loader.jsx';
+import InAppChat from '../components/InAppChat.jsx';
+import RatingModal from '../components/RatingModal.jsx';
 
 const ZONES = ['CMRCET', 'Hitech City', 'Airport'];
 
 const RiderDashboard = () => {
-  // Form State
   const [fromZone, setFromZone] = useState('CMRCET');
   const [toZone, setToZone] = useState('Hitech City');
   const [isScheduled, setIsScheduled] = useState(false);
   const [scheduledTime, setScheduledTime] = useState('');
   
-  // UI/Data State
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   
   const [activeRide, setActiveRide] = useState(null); 
   const [completedRideData, setCompletedRideData] = useState(null); 
+  
   const [showChat, setShowChat] = useState(false);
   const [hasNewMessage, setHasNewMessage] = useState(false);
   const [messages, setMessages] = useState([]);
@@ -31,19 +29,58 @@ const RiderDashboard = () => {
   const { auth } = useAuth();
 
   useEffect(() => {
+    const fetchCurrentRide = async () => {
+      try {
+        const config = { headers: { Authorization: `Bearer ${auth.token}` } };
+        const { data } = await axios.get(`${API}/api/rides/current`, config);
+
+        if (data) {
+          console.log("Restoring active ride:", data);
+          setActiveRide({
+            ride: data,
+            driver: data.driver 
+          });
+
+          if (data.status === 'requested') {
+             setMessage('Searching for nearby drivers...');
+          } else if (data.status === 'booked') {
+             setMessage('Your driver is on the way!');
+             if (socket) socket.emit('joinChatRoom', data._id);
+          } else if (data.status === 'in-progress') {
+             setMessage('Ride is in progress! Enjoy your trip.');
+             if (socket) socket.emit('joinChatRoom', data._id);
+          }
+        }
+      } catch (error) {
+        console.error("Could not fetch active ride", error);
+      }
+    };
+
+    if (auth.token && !activeRide) {
+      fetchCurrentRide();
+    }
+  }, [auth.token, socket]);
+
+
+  useEffect(() => {
     if (!socket) return;
 
-  const handleRideAccepted = (data) => {
+    // This is the snippet you pasted - IT IS CORRECT
+    const handleRideAccepted = (data) => {
       setLoading(false);
       setMessage('Your driver is on the way!');
       setActiveRide(data);
+      
+      // Reset Chat
       setShowChat(false); 
       setHasNewMessage(false);
-      setMessages([]); 
+      setMessages([]);
+      
+      // Join the chat room
+      socket.emit('joinChatRoom', data.ride._id);
     };
     
     const handleStatusChange = ({ status, rideId }) => {
-      // Check if this update is for our active ride
       if (activeRide && activeRide.ride._id === rideId) {
         
         const updatedRide = { ...activeRide, ride: { ...activeRide.ride, status: status } };
@@ -51,10 +88,12 @@ const RiderDashboard = () => {
 
         if (status === 'in-progress') {
           setMessage('Ride is in progress! Enjoy your trip.');
+          setShowChat(false);
         }
         
         if (status === 'completed') {
           setMessage('Ride complete! Please pay your driver.');
+          setShowChat(false);
         }
 
         if (status === 'cancelled') {
@@ -62,16 +101,14 @@ const RiderDashboard = () => {
           setCompletedRideData(null);
           setShowChat(false);
           setHasNewMessage(false);
-          setMessages([]); 
+          setMessages([]);
           setMessage('The ride was cancelled.');
         }
       }
     };
+
     const handleReceiveMessage = (message) => {
-      // Add the message to our persistent state
       setMessages((prev) => [...prev, message]);
-      
-      // Check for notification
       if (message.sender !== auth.role && !showChat) {
         setHasNewMessage(true);
       }
@@ -79,7 +116,7 @@ const RiderDashboard = () => {
 
     socket.on('rideAccepted', handleRideAccepted);
     socket.on('rideStatusChanged', handleStatusChange);
-    socket.on('receiveMessage', handleReceiveMessage); // Renamed for clarity
+    socket.on('receiveMessage', handleReceiveMessage);
 
     return () => {
       socket.off('rideAccepted', handleRideAccepted);
@@ -87,21 +124,8 @@ const RiderDashboard = () => {
       socket.off('receiveMessage', handleReceiveMessage);
     };
   }, [socket, activeRide, showChat, auth.role]);
-  
-  useEffect(() => {
-    if (socket && activeRide && activeRide.ride.status === 'booked') {
-      const rideId = activeRide.ride._id;
-      // We join the room as soon as the ride is 'booked'
-      socket.emit('joinChatRoom', rideId);
-      console.log('Rider joined chat room:', rideId);
-  
-      // Return a cleanup function to leave when the ride is no longer active
-      return () => {
-        socket.emit('leaveChatRoom', rideId);
-        console.log('Rider left chat room:', rideId);
-      };
-    }
-  }, [socket, activeRide]);
+
+
 
   const handleRequestRide = async (e) => {
     e.preventDefault();
@@ -114,31 +138,27 @@ const RiderDashboard = () => {
       
       const { data: createdRide } = await axios.post(`${API}/api/rides`, rideData, config);
 
+      // IMMEDIATE STATE UPDATE (Shows "Searching" UI)
+      setActiveRide({
+        ride: createdRide,
+        driver: null
+      });
 
       if (!isScheduled) {
-        // Send the full auth object as the rider
+        // Send request to drivers
         socket.emit('requestRide', { ...createdRide, rider: auth });
-        setMessage('Ride requested! Searching for nearby drivers.');
+        setMessage('Searching for nearby drivers...');
       } else {
         setMessage(`Ride scheduled for ${new Date(scheduledTime).toLocaleString()}`);
         setLoading(false);
+        setActiveRide(null); 
       }
     } catch (error) {
-      console.error("FULL ERROR OBJECT:", error); 
-      if (error.response) {
-        console.error("Backend Error Data:", error.response.data);
-        setMessage(error.response.data.message || 'Error from server');
-      } else if (error.request) {
-        console.error("No response from server.", error.request);
-        setMessage('Network Error: The server is not responding.');
-      } else {
-        console.error("Local JavaScript Error:", error.message);
-        setMessage(`Local Error: ${error.message}`);
-      }
-    } finally {
-      // We only set loading false in catch, because success leads to new state
-      if (loading) setLoading(false);
-    }
+      console.error("Error requesting ride:", error);
+      setMessage(error.response?.data?.message || 'Error requesting ride');
+      setLoading(false); // Stop loading on error
+    } 
+    // Do not set loading false in finally() if successful, we want to stay in "waiting" mode
   };
 
   const handleSimulatedPayment = async () => {
@@ -163,34 +183,40 @@ const RiderDashboard = () => {
     setLoading(true);
     try {
       const config = { headers: { Authorization: `Bearer ${auth.token}` } };
-      await axios.put(`${API}/api/rides/${activeRide.ride._id}/cancel`, {}, config);
+      const rideId = activeRide.ride ? activeRide.ride._id : activeRide._id;
 
-      // Notify the other user
+      await axios.put(`${API}/api/rides/${rideId}/cancel`, {}, config);
+
       socket.emit('rideUpdate', {
-        rideId: activeRide.ride._id,
+        rideId: rideId,
         status: 'cancelled',
-        riderId: activeRide.ride.rider._id || activeRide.ride.rider,
-        driverId: activeRide.driver._id || activeRide.driver,
+        riderId: auth._id,
+        driverId: activeRide.driver ? activeRide.driver._id : null,
       });
 
-      setActiveRide(null); // Go back to request form
+      setActiveRide(null); 
       setMessage('Ride has been cancelled.');
 
     } catch (err) {
       console.error("Error cancelling ride", err);
-      setMessage(err.response?.data?.message || 'Could not cancel ride');
+      if (activeRide && activeRide.ride.status === 'requested') {
+         setActiveRide(null);
+         setMessage('Request cancelled.');
+      } else {
+         setMessage(err.response?.data?.message || 'Could not cancel ride');
+      }
     } finally {
       setLoading(false);
     }
   };
-  
+
+
   const toggleChat = () => {
-    // When we open the chat, clear the notification
-    if (!showChat) {
-      setHasNewMessage(false);
-    }
+    if (!showChat) setHasNewMessage(false);
     setShowChat(prev => !prev);
   };
+
+
   // --- RENDER LOGIC ---
 
   if (completedRideData) {
@@ -203,71 +229,98 @@ const RiderDashboard = () => {
     );
   }
 
-  if (loading) return <Loader />;
+  // Check if we have an active ride to show
   if (activeRide) {
-  const { driver, ride } = activeRide;
+    const ride = activeRide.ride || activeRide; 
+    const driver = activeRide.driver;
 
-  return (
-    <div className="container dashboard-container">
-      <h2>{message}</h2>
+    return (
+      <div className="container dashboard-container">
+        <h2>{message}</h2>
+        
+        {ride.status === 'requested' && (
+           <div className="driver-details-card">
+             <div className="loader-spinner" style={{margin: '0 auto 1rem'}}></div>
+             <h3>Searching for Drivers...</h3>
+             <p>We have notified drivers in <strong>{ride.fromZone}</strong>.</p>
+             <p>Please wait while a driver accepts your request.</p>
+             
+             <button onClick={handleCancelRide} className="btn btn-secondary" style={{marginTop: '1.5rem'}}>
+                Cancel Request
+             </button>
+           </div>
+        )}
 
-      {/* --- RIDE BOOKED --- */}
-      {ride.status === 'booked' && (
-        <div className="driver-details-card">
-          <h3>Driver Details</h3>
-          <img
-            src={driver?.profilePhoto || '/images/default-avatar.png'}
-            alt={driver?.name || 'Driver'}
-            className="profile-photo-small"
-          />
-          <p><strong>Name:</strong> {driver?.name || 'Driver'}</p>
-          <p><strong>Vehicle:</strong> {driver?.vehicleNumber}</p>
-          <p><strong>Rating:</strong> {driver?.averageRating || 'N/A'} ★</p>
-
-          <hr />
-          <h3>Ride Info</h3>
-          <p><strong>Your OTP:</strong> {ride.otp}</p>
-          <p>Share this OTP with your driver to start the ride.</p>
-
-          <button onClick={handleCancelRide} className="btn btn-secondary" style={{ marginTop: '1rem' }}>
-            Cancel Ride
-          </button>
-
-          <button 
+        {/* --- VIEW 2: BOOKED (Driver Found) --- */}
+        {ride.status === 'booked' && (
+          <div className="driver-details-card">
+            <h3>Driver Details</h3>
+            <img 
+              src={driver?.profilePhoto || '/images/default.jpg'} 
+              alt={driver?.name || 'Driver'} 
+              className="profile-photo-small" 
+            />
+            <p><strong>Name:</strong> {driver?.name || 'Driver'}</p>
+            <p><strong>Vehicle:</strong> {driver?.vehicleNumber}</p>
+            <p><strong>Rating:</strong> {driver?.averageRating || 'N/A'} ★</p>
+            <hr />
+            <h3>Ride Info</h3>
+            <p><strong>Your OTP:</strong> <strong>{ride.otp}</strong></p>
+            <p>Share this OTP with your driver to start the ride.</p>
+            
+            <div className="ride-actions-container" style={{display: 'flex', gap: '1rem', justifyContent: 'center', marginTop: '1rem'}}>
+              <button onClick={handleCancelRide} className="btn btn-secondary">
+                Cancel Ride
+              </button>
+              <button 
                 onClick={toggleChat} 
                 className={`btn btn-primary ${hasNewMessage ? 'btn-chat-notify' : ''}`}
               >
                 {showChat ? 'Hide Chat' : 'Chat with Driver'}
                 {hasNewMessage && !showChat && ' (New!)'}
               </button>
+            </div>
+            
+            {showChat && <InAppChat rideId={ride._id} messages={messages} />}
+          </div>
+        )}
 
-{showChat && <InAppChat rideId={ride._id} messages={messages} />}        </div>
-      )}
+        {/* --- VIEW 3: IN PROGRESS --- */}
+        {ride.status === 'in-progress' && (
+           <div className="driver-details-card">
+             <h3>Ride In Progress</h3>
+             <p>Destination: {ride.toZone}</p>
+             <p>Enjoy your trip!</p>
+             <button 
+                onClick={toggleChat} 
+                className={`btn btn-primary ${hasNewMessage ? 'btn-chat-notify' : ''}`}
+                style={{marginTop: '1rem'}}
+              >
+                {showChat ? 'Hide Chat' : 'Chat with Driver'}
+                {hasNewMessage && !showChat && ' (New!)'}
+              </button>
+              {showChat && <InAppChat rideId={ride._id} messages={messages} />}
+           </div>
+        )}
 
-      {/* --- RIDE IN PROGRESS --- */}
-      {ride.status === 'in-progress' && (
-        <div className="driver-details-card">
-          <h3>Ride In Progress</h3>
-          <p>Destination: {ride.toZone}</p>
-          <p>Enjoy your trip!</p>
-        </div>
-      )}
+        {/* --- VIEW 4: COMPLETED --- */}
+        {ride.status === 'completed' && (
+          <div className="driver-details-card">
+            <h3>Ride Complete</h3>
+            <p>Total Fare: <strong>₹{ride.fare}</strong></p>
+            <p>Please pay your driver in cash.</p>
+            <button onClick={handleSimulatedPayment} className="btn btn-primary">
+              [ Pay with Cash ]
+            </button>
+          </div>
+        )}
 
-      {/* --- RIDE COMPLETED --- */}
-      {ride.status === 'completed' && (
-        <div className="driver-details-card">
-          <h3>Ride Complete</h3>
-          <p>Total Fare: <strong>₹{ride.fare}</strong></p>
-          <p>Please pay your driver in cash.</p>
-          <button onClick={handleSimulatedPayment} className="btn btn-primary">
-            [ Pay with Cash ]
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
+      </div>
+    );
+  }
 
+  // --- DEFAULT VIEW: REQUEST FORM ---
+  if (loading) return <Loader />;
 
   return (
     <div className="container dashboard-container">

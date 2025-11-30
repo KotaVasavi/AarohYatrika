@@ -19,12 +19,14 @@ const HomePage = () => {
           </Link>
         </div>
         <div className="hero-image">
-                  </div>
+          <img src="/images/hero.jpg" alt="Hero" />
+        </div>
       </section>
 
       <section className="features-section">
         <div className="feature-item">
           <div className="feature-image">
+            <img src="/images/hero.jpg" alt="Feature" />
                       </div>
           <h3>“Because Every Woman Deserves the Driver’s Seat.”</h3>
           <p>
@@ -35,6 +37,8 @@ const HomePage = () => {
         </div>
         <div className="feature-item">
           <div className="feature-image">
+                        <img src="/images/feature.jpg" alt="Feature" />
+
                        </div>
           <h3>“Her Journey is Her Ascent”</h3>
           <p>

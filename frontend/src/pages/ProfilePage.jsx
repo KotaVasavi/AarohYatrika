@@ -40,7 +40,40 @@ const ProfilePage = () => {
     };
     fetchProfile();
   }, [auth.token]);
+    
+  const handleDeletePhoto = async () => {
+    if (!window.confirm("Are you sure you want to remove your profile photo?")) return;
 
+    try {
+      setLoading(true);
+      const config = {
+        headers: { Authorization: `Bearer ${auth.token}` },
+      };
+
+      // Send null to the backend to clear the value
+      const { data } = await axios.put(`${API}/api/users/profile`, { profilePhoto: null }, config);
+
+      // 1. Update Global Auth State (so the navbar updates instantly)
+      const newAuthData = { 
+        token: auth.token, 
+        ...data            
+      };
+      setAuth(newAuthData);
+      
+      // 2. Update Local Storage
+      localStorage.setItem('userInfo', JSON.stringify(newAuthData));
+
+      // 3. Update Local Component State
+      setUser(data);       // Updates the big profile image
+      setProfilePhoto(''); // Clears the input field text
+      setSuccess('Profile photo removed successfully!');
+
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to remove photo');
+    } finally {
+      setLoading(false);
+    }
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (password && password !== confirmPassword) {
@@ -63,10 +96,17 @@ const ProfilePage = () => {
       }
 
       const { data } = await axios.put(`${API}/api/users/profile`, updateData, config);
+      const newAuthData = { 
+        token: auth.token, 
+        ...data            
+      };
       
-      // Update local storage/auth context
-      setAuth({ ...auth, user: { ...auth.user, ...data } });
-      setUser(data);
+    
+      setAuth(newAuthData);
+      
+      localStorage.setItem('userInfo', JSON.stringify(newAuthData));
+      // setAuth({ ...auth, user: { ...auth.user, ...data } });
+      // setUser(data);
       setSuccess('Profile updated successfully!');
       setPassword('');
       setConfirmPassword('');
@@ -86,10 +126,13 @@ const ProfilePage = () => {
       {user && (
         <div className="profile-header">
           <img 
-            src={user.profilePhoto || '/images/default-avatar.png'} 
+            src={auth.profilePhoto || '/images/default.jpg'} 
             alt="Profile" 
             className="profile-avatar"
+            onError={(e) => { e.target.src = '/images/default.jpg'; }}
           />
+          
+          
           <h2>{user.name}</h2>
           <p>{user.role}</p>
           <div className="profile-stats">

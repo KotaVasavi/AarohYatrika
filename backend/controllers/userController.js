@@ -26,8 +26,9 @@ const updateUserProfile = asyncHandler(async (req, res) => {
   if (user) {
     user.name = req.body.name || user.name;
     user.email = req.body.email || user.email;
-    user.profilePhoto = req.body.profilePhoto || user.profilePhoto;
-    if (req.body.password) {
+if (req.body.profilePhoto) {
+      user.profilePhoto = req.body.profilePhoto;
+    }    if (req.body.password) {
       user.password = req.body.password; // Mongoose 'pre-save' hook will hash it
     }
 
